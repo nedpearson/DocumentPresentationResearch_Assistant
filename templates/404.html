@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Not Found{% endblock %}
+{% block page_title %}404{% endblock %}
+{% block content %}
+<div class="empty-state" style="min-height:60vh;display:flex;flex-direction:column;align-items:center;justify-content:center">
+  <svg viewBox="0 0 24 24" width="64" height="64" opacity=".3"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+  <h2 style="margin:1rem 0 .5rem">Page not found</h2>
+  <p>The page you're looking for doesn't exist.</p>
+  <a href="/" class="btn btn-primary" style="margin-top:1.5rem">Go to Dashboard</a>
+</div>
+{% endblock %}

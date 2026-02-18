@@ -1,0 +1,169 @@
+{% extends "base.html" %}
+{% block title %}Presentations{% endblock %}
+{% block page_title %}Presentation Generator{% endblock %}
+{% block page_subtitle %}Create polished PPTX presentations from your documents{% endblock %}
+
+{% block content %}
+<div class="two-col-layout">
+  <!-- Config panel -->
+  <div class="panel-left">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Source Documents</h3></div>
+      {% if documents %}
+        <div class="doc-select-list" id="presentDocList">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="checkbox" name="presentDoc" value="{{ doc.id }}"
+              {% if loop.first %}checked{% endif %} />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info">
+              <span class="doc-name">{{ doc.original_name }}</span>
+              <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>No documents. <a href="/documents">Upload one first.</a></p>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <div class="card-header"><h3 class="card-title">Settings</h3></div>
+      <div class="form-group">
+        <label class="form-label">Presentation Title</label>
+        <input type="text" id="presentTitle" class="form-input" placeholder="My Presentation" value="Document Presentation" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Number of Slides</label>
+        <div class="slider-wrap">
+          <input type="range" id="slideCount" min="3" max="20" value="8" class="slider"
+            oninput="document.getElementById('slideCountVal').textContent = this.value" />
+          <span id="slideCountVal" class="slider-val">8</span>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Style</label>
+        <div class="style-options">
+          <label class="style-option">
+            <input type="radio" name="presentStyle" value="professional" checked />
+            <span>Professional</span>
+          </label>
+          <label class="style-option">
+            <input type="radio" name="presentStyle" value="executive" />
+            <span>Executive</span>
+          </label>
+          <label class="style-option">
+            <input type="radio" name="presentStyle" value="technical" />
+            <span>Technical</span>
+          </label>
+          <label class="style-option">
+            <input type="radio" name="presentStyle" value="educational" />
+            <span>Educational</span>
+          </label>
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="genBtn" onclick="generatePresentation()"
+        {% if not documents %}disabled{% endif %}>
+        <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        Generate Presentation
+      </button>
+    </div>
+  </div>
+
+  <!-- Results panel -->
+  <div class="panel-right">
+    <div class="card result-card">
+      <!-- Spinner -->
+      <div class="spinner-wrap" id="genSpinner" style="display:none">
+        <div class="spinner"></div>
+        <p>Generating your presentation with AI...</p>
+        <p class="spinner-sub">This may take 20-40 seconds</p>
+      </div>
+
+      <!-- Result -->
+      <div id="genResult" style="display:none" class="gen-result">
+        <div class="gen-success-icon">🎉</div>
+        <h3 id="genResultTitle">Presentation Ready!</h3>
+        <p id="genResultMeta"></p>
+        <a id="genDownloadBtn" href="#" class="btn btn-primary" style="margin-top:1rem">
+          <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          Download PPTX
+        </a>
+      </div>
+
+      <!-- Placeholder -->
+      <div class="result-placeholder" id="genPlaceholder">
+        <svg viewBox="0 0 24 24" width="56" height="56" opacity=".2">
+          <rect x="2" y="3" width="20" height="14" rx="2"/>
+          <line x1="8" y1="21" x2="16" y2="21"/>
+          <line x1="12" y1="17" x2="12" y2="21"/>
+        </svg>
+        <p>Configure settings on the left and click <strong>Generate Presentation</strong>.</p>
+      </div>
+    </div>
+
+    <!-- Previous presentations -->
+    {% if presentations %}
+    <div class="card" style="margin-top:1.5rem">
+      <div class="card-header">
+        <h3 class="card-title">Previous Presentations</h3>
+      </div>
+      {% for f in presentations %}
+      <div class="doc-row">
+        <div class="doc-ext" style="background:rgba(16,185,129,.15);color:#10B981">PPTX</div>
+        <div class="doc-info">
+          <span class="doc-name">{{ f }}</span>
+        </div>
+        <div class="doc-actions">
+          <a href="/api/download/{{ f }}" class="btn btn-sm">Download</a>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  async function generatePresentation() {
+    const docIds = Array.from(document.querySelectorAll('input[name="presentDoc"]:checked')).map(cb => cb.value);
+    if (!docIds.length) { showToast('Select at least one document', 'warning'); return; }
+
+    const title = document.getElementById('presentTitle').value.trim() || 'Presentation';
+    const num_slides = parseInt(document.getElementById('slideCount').value);
+    const style = document.querySelector('input[name="presentStyle"]:checked')?.value || 'professional';
+
+    document.getElementById('genPlaceholder').style.display = 'none';
+    document.getElementById('genResult').style.display = 'none';
+    document.getElementById('genSpinner').style.display = 'flex';
+    document.getElementById('genBtn').disabled = true;
+
+    try {
+      const resp = await fetch('/api/generate-presentation', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc_ids: docIds, title, num_slides, style }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Generation failed');
+
+      document.getElementById('genResultTitle').textContent = `"${title}" Ready!`;
+      document.getElementById('genResultMeta').textContent = `${data.slides} slides generated`;
+      document.getElementById('genDownloadBtn').href = data.download_url;
+      document.getElementById('genResult').style.display = 'flex';
+      showToast('Presentation generated!', 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+      document.getElementById('genPlaceholder').style.display = 'flex';
+    } finally {
+      document.getElementById('genSpinner').style.display = 'none';
+      document.getElementById('genBtn').disabled = false;
+    }
+  }
+</script>
+{% endblock %}

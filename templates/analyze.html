@@ -1,0 +1,170 @@
+{% extends "base.html" %}
+{% block title %}Analyze{% endblock %}
+{% block page_title %}Document Analysis{% endblock %}
+{% block page_subtitle %}Extract insights, summaries, entities and sentiment{% endblock %}
+
+{% block content %}
+<div class="two-col-layout">
+  <!-- Controls panel -->
+  <div class="panel-left">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+
+      {% if documents %}
+        <div class="doc-select-list" id="docSelectList">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="radio" name="analyzeDoc" value="{{ doc.id }}"
+              {% if loop.first %}checked{% endif %} />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info">
+              <span class="doc-name">{{ doc.original_name }}</span>
+              <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>No documents. <a href="/documents">Upload one first.</a></p>
+        </div>
+      {% endif %}
+    </div>
+
+    <div class="card" style="margin-top:1rem">
+      <div class="card-header"><h3 class="card-title">Analysis Type</h3></div>
+      <div class="analysis-types">
+        <label class="analysis-type-option">
+          <input type="radio" name="analysisType" value="full" checked />
+          <div class="option-content">
+            <span class="option-icon">🔍</span>
+            <div>
+              <div class="option-title">Full Analysis</div>
+              <div class="option-desc">Comprehensive deep-dive</div>
+            </div>
+          </div>
+        </label>
+        <label class="analysis-type-option">
+          <input type="radio" name="analysisType" value="summary" />
+          <div class="option-content">
+            <span class="option-icon">📋</span>
+            <div>
+              <div class="option-title">Summary</div>
+              <div class="option-desc">Executive overview</div>
+            </div>
+          </div>
+        </label>
+        <label class="analysis-type-option">
+          <input type="radio" name="analysisType" value="insights" />
+          <div class="option-content">
+            <span class="option-icon">💡</span>
+            <div>
+              <div class="option-title">Key Insights</div>
+              <div class="option-desc">Top 10 takeaways</div>
+            </div>
+          </div>
+        </label>
+        <label class="analysis-type-option">
+          <input type="radio" name="analysisType" value="sentiment" />
+          <div class="option-content">
+            <span class="option-icon">🎭</span>
+            <div>
+              <div class="option-title">Sentiment & Tone</div>
+              <div class="option-desc">Rhetorical analysis</div>
+            </div>
+          </div>
+        </label>
+        <label class="analysis-type-option">
+          <input type="radio" name="analysisType" value="entities" />
+          <div class="option-content">
+            <span class="option-icon">🏷️</span>
+            <div>
+              <div class="option-title">Entity Extraction</div>
+              <div class="option-desc">People, places, terms</div>
+            </div>
+          </div>
+        </label>
+      </div>
+      <button class="btn btn-primary btn-full" id="analyzeBtn" onclick="runAnalysis()"
+        {% if not documents %}disabled{% endif %}>
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        Run Analysis
+      </button>
+    </div>
+  </div>
+
+  <!-- Results panel -->
+  <div class="panel-right">
+    <div class="card result-card" id="resultCard">
+      <div class="result-placeholder" id="resultPlaceholder">
+        <svg viewBox="0 0 24 24" width="56" height="56" opacity=".2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <p>Select a document and analysis type, then click <strong>Run Analysis</strong>.</p>
+      </div>
+      <div id="resultContent" style="display:none">
+        <div class="result-header">
+          <span id="resultTitle" class="result-type-label"></span>
+          <button class="btn btn-sm" onclick="copyResult()">Copy</button>
+        </div>
+        <div class="markdown-body" id="resultBody"></div>
+      </div>
+      <div class="spinner-wrap" id="analyzeSpinner" style="display:none">
+        <div class="spinner"></div>
+        <p>Analyzing document with AI...</p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Pre-select doc from query param
+  const urlDoc = new URLSearchParams(location.search).get('doc');
+  if (urlDoc) {
+    const radio = document.querySelector(`input[value="${urlDoc}"]`);
+    if (radio) radio.checked = true;
+  }
+
+  async function runAnalysis() {
+    const docId = document.querySelector('input[name="analyzeDoc"]:checked')?.value;
+    const atype = document.querySelector('input[name="analysisType"]:checked')?.value || 'full';
+    if (!docId) { showToast('Select a document first', 'warning'); return; }
+
+    document.getElementById('resultPlaceholder').style.display = 'none';
+    document.getElementById('resultContent').style.display = 'none';
+    document.getElementById('analyzeSpinner').style.display = 'flex';
+    document.getElementById('analyzeBtn').disabled = true;
+
+    const typeLabels = {
+      full: 'Full Analysis', summary: 'Summary', insights: 'Key Insights',
+      sentiment: 'Sentiment & Tone', entities: 'Entity Extraction'
+    };
+
+    try {
+      const resp = await fetch(`/api/analyze/${docId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ type: atype }),
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Analysis failed');
+
+      document.getElementById('resultTitle').textContent = typeLabels[atype] || atype;
+      document.getElementById('resultBody').innerHTML = marked.parse(data.result);
+      document.getElementById('resultContent').style.display = 'block';
+      showToast('Analysis complete!', 'success');
+    } catch (e) {
+      showToast(e.message, 'error');
+      document.getElementById('resultPlaceholder').style.display = 'flex';
+    } finally {
+      document.getElementById('analyzeSpinner').style.display = 'none';
+      document.getElementById('analyzeBtn').disabled = false;
+    }
+  }
+
+  function copyResult() {
+    const text = document.getElementById('resultBody').innerText;
+    navigator.clipboard.writeText(text).then(() => showToast('Copied!', 'success'));
+  }
+</script>
+{% endblock %}

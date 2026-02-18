@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% block title %}Documents{% endblock %}
+{% block page_title %}Documents{% endblock %}
+{% block page_subtitle %}Manage your uploaded documents{% endblock %}
+
+{% block page_actions %}
+<label class="btn btn-primary upload-btn">
+  <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+  Upload
+  <input type="file" id="uploadInput" accept=".pdf,.docx,.doc,.txt,.pptx,.md" hidden multiple />
+</label>
+{% endblock %}
+
+{% block content %}
+<!-- Drop zone -->
+<div class="drop-zone compact" id="dropZone">
+  <div class="drop-zone-inner">
+    <svg viewBox="0 0 24 24" width="24" height="24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <span>Drop files here or <label for="dropInput2" class="drop-link">browse</label></span>
+    <input type="file" id="dropInput2" accept=".pdf,.docx,.doc,.txt,.pptx,.md" hidden multiple />
+  </div>
+</div>
+
+<div class="card" style="margin-top:1.5rem">
+  <div class="card-header">
+    <h3 class="card-title">All Documents</h3>
+    <span class="badge">{{ documents|length }} files</span>
+  </div>
+  <div id="docList">
+    {% if documents %}
+      {% for doc in documents %}
+      <div class="doc-row-full" data-id="{{ doc.id }}">
+        <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+        <div class="doc-info">
+          <span class="doc-name">{{ doc.original_name }}</span>
+          <span class="doc-meta">
+            {{ "{:,}".format(doc.word_count) }} words ·
+            {{ (doc.size/1024)|round(1) }} KB ·
+            Uploaded {{ doc.uploaded_at[:10] }}
+            {% if doc.analysis %} · <span class="badge badge-green">Analyzed</span>{% endif %}
+          </span>
+        </div>
+        <div class="doc-actions">
+          <a href="/analyze?doc={{ doc.id }}" class="btn btn-sm">Analyze</a>
+          <a href="/research?doc={{ doc.id }}" class="btn btn-sm">Chat</a>
+          <button class="btn btn-sm btn-danger" onclick="deleteDoc('{{ doc.id }}', this)">Delete</button>
+        </div>
+      </div>
+      {% endfor %}
+    {% else %}
+      <div class="empty-state">
+        <svg viewBox="0 0 24 24" width="48" height="48" opacity=".3"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        <p>No documents yet. Upload some files to get started.</p>
+      </div>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  initDropZone('dropZone', 'dropInput2', () => location.reload());
+  document.getElementById('uploadInput').addEventListener('change', function() {
+    uploadFiles(Array.from(this.files), () => location.reload());
+  });
+
+  async function deleteDoc(id, btn) {
+    if (!confirm('Delete this document?')) return;
+    btn.disabled = true;
+    const resp = await fetch(`/api/documents/${id}`, { method: 'DELETE' });
+    if (resp.ok) {
+      btn.closest('.doc-row-full').remove();
+      showToast('Document deleted', 'success');
+    } else {
+      showToast('Failed to delete', 'error');
+      btn.disabled = false;
+    }
+  }
+</script>
+{% endblock %}

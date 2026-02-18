@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Research Chat{% endblock %}
+{% block page_title %}Research Chat{% endblock %}
+{% block page_subtitle %}Ask questions across your documents using AI{% endblock %}
+
+{% block content %}
+<div class="two-col-layout chat-layout">
+  <!-- Sidebar: doc selection -->
+  <div class="panel-left">
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Knowledge Base</h3></div>
+      {% if documents %}
+        <p class="panel-hint">Select documents to include in context:</p>
+        <div class="doc-select-list" id="docCheckList">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="checkbox" name="researchDoc" value="{{ doc.id }}"
+              {% if loop.first %}checked{% endif %} />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info">
+              <span class="doc-name">{{ doc.original_name }}</span>
+              <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+      {% else %}
+        <div class="empty-state">
+          <p>No documents. <a href="/documents">Upload one first.</a></p>
+        </div>
+      {% endif %}
+
+      <button class="btn btn-secondary btn-full" style="margin-top:1rem" onclick="clearChat()">Clear Chat</button>
+    </div>
+  </div>
+
+  <!-- Chat panel -->
+  <div class="panel-right chat-panel">
+    <div class="chat-messages" id="chatMessages">
+      <div class="chat-welcome">
+        <div class="chat-welcome-icon">💬</div>
+        <h3>Research Assistant</h3>
+        <p>Select documents from the left panel and ask any question about them. I'll analyze the content and give you accurate, cited answers.</p>
+      </div>
+    </div>
+
+    <div class="chat-input-area">
+      <div class="chat-input-wrap">
+        <textarea id="chatInput" class="chat-input" placeholder="Ask a question about your documents..."
+          rows="1" onkeydown="handleKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="chat-send-btn" id="sendBtn" onclick="sendMessage()">
+          <svg viewBox="0 0 24 24"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+      <p class="chat-hint">Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line</p>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  let sessionId = null;
+
+  // Pre-select doc from query param
+  const urlDoc = new URLSearchParams(location.search).get('doc');
+  if (urlDoc) {
+    document.querySelectorAll('input[name="researchDoc"]').forEach(cb => {
+      cb.checked = cb.value === urlDoc;
+    });
+  }
+
+  function getSelectedDocs() {
+    return Array.from(document.querySelectorAll('input[name="researchDoc"]:checked')).map(cb => cb.value);
+  }
+
+  function handleKey(e) {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  }
+
+  function autoResize(el) {
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 160) + 'px';
+  }
+
+  function appendMessage(role, content) {
+    const container = document.getElementById('chatMessages');
+    const welcome = container.querySelector('.chat-welcome');
+    if (welcome) welcome.remove();
+
+    const div = document.createElement('div');
+    div.className = `chat-msg chat-msg-${role}`;
+    div.innerHTML = `
+      <div class="chat-bubble">
+        ${role === 'assistant' ? '<div class="markdown-body">' + marked.parse(content) + '</div>' : escapeHtml(content)}
+      </div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+    return div;
+  }
+
+  function escapeHtml(s) {
+    return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  async function sendMessage() {
+    const input = document.getElementById('chatInput');
+    const question = input.value.trim();
+    if (!question) return;
+
+    const docs = getSelectedDocs();
+    if (docs.length === 0) { showToast('Select at least one document', 'warning'); return; }
+
+    input.value = '';
+    input.style.height = 'auto';
+    document.getElementById('sendBtn').disabled = true;
+
+    appendMessage('user', question);
+
+    // Typing indicator
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'chat-msg chat-msg-assistant';
+    typingDiv.innerHTML = '<div class="chat-bubble"><div class="typing-dots"><span></span><span></span><span></span></div></div>';
+    document.getElementById('chatMessages').appendChild(typingDiv);
+    document.getElementById('chatMessages').scrollTop = 999999;
+
+    try {
+      const resp = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ doc_ids: docs, question, session_id: sessionId }),
+      });
+      const data = await resp.json();
+      typingDiv.remove();
+      if (!resp.ok) throw new Error(data.error || 'Chat failed');
+      sessionId = data.session_id;
+      appendMessage('assistant', data.answer);
+    } catch (e) {
+      typingDiv.remove();
+      showToast(e.message, 'error');
+    } finally {
+      document.getElementById('sendBtn').disabled = false;
+      input.focus();
+    }
+  }
+
+  function clearChat() {
+    sessionId = null;
+    const c = document.getElementById('chatMessages');
+    c.innerHTML = `<div class="chat-welcome">
+      <div class="chat-welcome-icon">💬</div>
+      <h3>Research Assistant</h3>
+      <p>Select documents from the left panel and ask any question about them.</p>
+    </div>`;
+  }
+</script>
+{% endblock %}

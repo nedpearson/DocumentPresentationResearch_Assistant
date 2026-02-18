@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block page_title %}Dashboard{% endblock %}
+{% block page_subtitle %}Your document intelligence command center{% endblock %}
+
+{% block page_actions %}
+<label class="btn btn-primary upload-btn">
+  <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+  Upload Document
+  <input type="file" id="heroUpload" accept=".pdf,.docx,.doc,.txt,.pptx,.md" hidden multiple />
+</label>
+{% endblock %}
+
+{% block content %}
+<!-- Stats grid -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-icon" style="background:rgba(0,180,216,.15);color:#00B4D8">
+      <svg viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" id="statDocs">{{ stats.total_docs }}</span>
+      <span class="stat-label">Documents</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:rgba(124,58,237,.15);color:#7C3AED">
+      <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" id="statAnalyzed">{{ stats.analyzed }}</span>
+      <span class="stat-label">Analyzed</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:rgba(16,185,129,.15);color:#10B981">
+      <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" id="statPresentations">{{ stats.presentations }}</span>
+      <span class="stat-label">Presentations</span>
+    </div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-icon" style="background:rgba(245,158,11,.15);color:#F59E0B">
+      <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+    </div>
+    <div class="stat-info">
+      <span class="stat-value" id="statWords">{{ "{:,}".format(stats.total_words) }}</span>
+      <span class="stat-label">Total Words</span>
+    </div>
+  </div>
+</div>
+
+<!-- Drop zone -->
+<div class="drop-zone" id="dropZone">
+  <div class="drop-zone-inner">
+    <svg class="drop-icon" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    <p class="drop-title">Drop documents here or <label for="dropInput" class="drop-link">browse</label></p>
+    <p class="drop-sub">PDF, DOCX, TXT, PPTX, MD — up to 16 MB each</p>
+    <input type="file" id="dropInput" accept=".pdf,.docx,.doc,.txt,.pptx,.md" hidden multiple />
+  </div>
+  <div class="upload-progress" id="uploadProgress" style="display:none">
+    <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
+    <span class="progress-label" id="progressLabel">Uploading...</span>
+  </div>
+</div>
+
+<!-- Two column layout -->
+<div class="dashboard-grid">
+  <!-- Recent documents -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Recent Documents</h3>
+      <a href="/documents" class="card-link">View all →</a>
+    </div>
+    <div id="recentDocs">
+      {% if recent %}
+        {% for doc in recent %}
+        <div class="doc-row" data-id="{{ doc.id }}">
+          <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+          <div class="doc-info">
+            <span class="doc-name">{{ doc.original_name }}</span>
+            <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words · {{ (doc.size/1024)|round(1) }} KB</span>
+          </div>
+          <div class="doc-actions">
+            <a href="/analyze?doc={{ doc.id }}" class="icon-btn" title="Analyze">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </a>
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="empty-state">
+          <p>No documents yet. Upload one to get started!</p>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- Quick actions -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">Quick Actions</h3>
+    </div>
+    <div class="quick-actions">
+      <a href="/analyze" class="quick-card">
+        <div class="quick-icon" style="background:rgba(0,180,216,.1);color:#00B4D8">
+          <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        </div>
+        <div>
+          <div class="quick-title">Analyze Document</div>
+          <div class="quick-desc">Summarize, extract insights, entities &amp; tone</div>
+        </div>
+      </a>
+      <a href="/research" class="quick-card">
+        <div class="quick-icon" style="background:rgba(124,58,237,.1);color:#7C3AED">
+          <svg viewBox="0 0 24 24"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+        </div>
+        <div>
+          <div class="quick-title">Research Chat</div>
+          <div class="quick-desc">Ask questions across multiple documents</div>
+        </div>
+      </a>
+      <a href="/present" class="quick-card">
+        <div class="quick-icon" style="background:rgba(16,185,129,.1);color:#10B981">
+          <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+        </div>
+        <div>
+          <div class="quick-title">Generate Presentation</div>
+          <div class="quick-desc">Create polished PPTX from your documents</div>
+        </div>
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  initDropZone('dropZone', 'dropInput', refreshRecentDocs);
+  document.getElementById('heroUpload').addEventListener('change', function() {
+    uploadFiles(Array.from(this.files), refreshRecentDocs);
+  });
+
+  async function refreshRecentDocs() {
+    const resp = await fetch('/api/stats');
+    if (!resp.ok) return;
+    const s = await resp.json();
+    document.getElementById('statDocs').textContent = s.total_docs;
+    document.getElementById('statAnalyzed').textContent = s.analyzed;
+    document.getElementById('statPresentations').textContent = s.presentations;
+    document.getElementById('statWords').textContent = s.total_words.toLocaleString();
+  }
+</script>
+{% endblock %}
