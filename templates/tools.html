@@ -1,0 +1,455 @@
+{% extends "base.html" %}
+{% block title %}Tools{% endblock %}
+{% block page_title %}Tools{% endblock %}
+{% block page_subtitle %}Timeline extraction, action items, complexity scoring, batch analysis, custom templates & exports{% endblock %}
+
+{% block content %}
+<div class="tab-bar" style="flex-wrap:wrap">
+  <button class="tab-btn active" onclick="switchTab('timeline', this)">📅 Timeline</button>
+  <button class="tab-btn" onclick="switchTab('actions', this)">✅ Action Items</button>
+  <button class="tab-btn" onclick="switchTab('complexity', this)">📊 Readability</button>
+  <button class="tab-btn" onclick="switchTab('scoring', this)">🎯 Score Doc</button>
+  <button class="tab-btn" onclick="switchTab('batch', this)">⚡ Batch Analyze</button>
+  <button class="tab-btn" onclick="switchTab('templates', this)">📋 Templates</button>
+  <button class="tab-btn" onclick="switchTab('export', this)">💾 Export</button>
+</div>
+
+<!-- ===== Timeline ===== -->
+<div class="tab-panel" id="tab-timeline">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+        <div class="doc-select-list">{% for doc in documents %}<label class="doc-select-item"><input type="radio" name="tlDoc" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} /><div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div><div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div></label>{% endfor %}{% if not documents %}<div class="empty-state"><p>No documents. <a href="/documents">Upload first.</a></p></div>{% endif %}</div>
+        <div class="form-group"><button class="btn btn-primary btn-full" onclick="runTimeline()" {% if not documents %}disabled{% endif %}>📅 Extract Timeline</button></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card" style="min-height:400px">
+        <div class="result-placeholder" id="tlPlaceholder"><svg viewBox="0 0 24 24" width="48" height="48" opacity=".2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg><p>Extract dates, milestones, and events from any document.</p></div>
+        <div class="spinner-wrap" id="tlSpinner" style="display:none"><div class="spinner"></div><p>Extracting timeline...</p></div>
+        <div id="tlBody" style="display:none;padding:1.25rem">
+          <div class="result-header" style="padding:0 0 1rem"><span class="result-type-label" id="tlDocName"></span><button class="btn btn-sm" onclick="copyEl('tlContent')">Copy JSON</button></div>
+          <div class="timeline-container" id="tlContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Action Items ===== -->
+<div class="tab-panel" id="tab-actions" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+        <div class="doc-select-list">{% for doc in documents %}<label class="doc-select-item"><input type="radio" name="actDoc" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} /><div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div><div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div></label>{% endfor %}{% if not documents %}<div class="empty-state"><p>No documents.</p></div>{% endif %}</div>
+        <div class="form-group"><button class="btn btn-primary btn-full" onclick="runActions()" {% if not documents %}disabled{% endif %}>✅ Extract Action Items</button></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card" style="min-height:400px">
+        <div class="result-placeholder" id="actPlaceholder"><svg viewBox="0 0 24 24" width="48" height="48" opacity=".2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg><p>Extract tasks, owners, deadlines, and priorities from any document.</p></div>
+        <div class="spinner-wrap" id="actSpinner" style="display:none"><div class="spinner"></div><p>Extracting action items...</p></div>
+        <div id="actBody" style="display:none;padding:1.25rem">
+          <div class="result-header" style="padding:0 0 1rem"><span class="result-type-label" id="actDocName"></span><button class="btn btn-sm" onclick="copyActionsText()">Copy</button></div>
+          <div id="actContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Readability ===== -->
+<div class="tab-panel" id="tab-complexity" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+        <div class="doc-select-list">{% for doc in documents %}<label class="doc-select-item"><input type="radio" name="cxDoc" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} /><div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div><div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div></label>{% endfor %}{% if not documents %}<div class="empty-state"><p>No documents.</p></div>{% endif %}</div>
+        <div class="form-group"><button class="btn btn-primary btn-full" onclick="runComplexity()" {% if not documents %}disabled{% endif %}>📊 Analyze Readability</button></div>
+      </div>
+      <div class="card" style="margin-top:1rem;padding:1.25rem">
+        <h4 style="font-size:.85rem;font-weight:600;color:var(--text-secondary);margin-bottom:.75rem">Flesch Reading Ease Scale</h4>
+        {% for label, rng in [("Very Easy","90–100"),("Easy","80–89"),("Fairly Easy","70–79"),("Standard","60–69"),("Fairly Difficult","50–59"),("Difficult","30–49"),("Very Confusing","0–29")] %}
+        <div style="display:flex;justify-content:space-between;font-size:.78rem;padding:.2rem 0;color:var(--text-muted)"><span>{{ label }}</span><span>{{ rng }}</span></div>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card" style="min-height:400px">
+        <div class="result-placeholder" id="cxPlaceholder"><svg viewBox="0 0 24 24" width="48" height="48" opacity=".2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg><p>Get Flesch-Kincaid readability scores, grade level, and writing statistics — no AI needed.</p></div>
+        <div class="spinner-wrap" id="cxSpinner" style="display:none"><div class="spinner"></div><p>Calculating readability...</p></div>
+        <div id="cxBody" style="display:none;padding:1.5rem">
+          <div class="complexity-grid" id="cxContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Document Scoring ===== -->
+<div class="tab-panel" id="tab-scoring" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+        <div class="doc-select-list">{% for doc in documents %}<label class="doc-select-item"><input type="radio" name="scoreDoc" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} /><div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div><div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div></label>{% endfor %}{% if not documents %}<div class="empty-state"><p>No documents.</p></div>{% endif %}</div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><h3 class="card-title">Scoring Criteria</h3></div>
+        <div class="form-group"><label class="form-label">Define your rubric or criteria</label><textarea id="scoreCriteria" class="form-input" rows="6" style="resize:vertical" placeholder="Examples:&#10;- Meets ISO 27001 security requirements&#10;- Clear executive summary (2 pts)&#10;- Specific ROI data with sources (3 pts)&#10;- Risk mitigation plan (2 pts)&#10;- Matches our brand voice guidelines"></textarea></div>
+        <div class="form-group" style="padding-top:0"><button class="btn btn-primary btn-full" onclick="runScoring()" {% if not documents %}disabled{% endif %}>🎯 Score Document</button></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card result-card">
+        <div class="result-placeholder" id="scorePlaceholder"><svg viewBox="0 0 24 24" width="48" height="48" opacity=".2"><circle cx="12" cy="8" r="6"/><path d="M15.477 12.89L17 22l-5-3-5 3 1.523-9.11"/></svg><p>Score any document against your custom criteria or rubric.</p></div>
+        <div class="spinner-wrap" id="scoreSpinner" style="display:none"><div class="spinner"></div><p>Scoring document against your criteria...</p></div>
+        <div id="scoreBody" style="display:none">
+          <div class="result-header"><span class="result-type-label">Scoring Report</span><button class="btn btn-sm" onclick="copyEl('scoreContent')">Copy</button></div>
+          <div class="markdown-body" id="scoreContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Batch Analysis ===== -->
+<div class="tab-panel" id="tab-batch" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Documents</h3></div>
+        <div style="padding:.5rem 1rem"><label style="font-size:.82rem;color:var(--text-secondary);cursor:pointer"><input type="checkbox" id="selectAllBatch" onchange="toggleAllBatch(this)" style="accent-color:var(--accent);margin-right:.5rem" /> Select all</label></div>
+        <div class="doc-select-list">{% for doc in documents %}<label class="doc-select-item"><input type="checkbox" class="batchDoc" value="{{ doc.id }}" checked /><div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div><div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span><span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span></div></label>{% endfor %}{% if not documents %}<div class="empty-state"><p>No documents.</p></div>{% endif %}</div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><h3 class="card-title">Analysis Type</h3></div>
+        <div class="form-group">
+          <select id="batchType" class="form-input">
+            <option value="summary">Summary</option>
+            <option value="insights">Key Insights</option>
+            <option value="entities">Entity Extraction</option>
+            <option value="sentiment">Sentiment & Tone</option>
+            <option value="full">Full Analysis</option>
+          </select>
+        </div>
+        <div class="form-group" style="padding-top:0"><button class="btn btn-primary btn-full" onclick="runBatch()" {% if not documents %}disabled{% endif %}>⚡ Run Batch Analysis</button></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card" style="min-height:400px">
+        <div class="result-placeholder" id="batchPlaceholder"><svg viewBox="0 0 24 24" width="48" height="48" opacity=".2"><path d="M13 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V9z"/><polyline points="13 2 13 9 20 9"/></svg><p>Analyze all your documents at once. Cached results are returned instantly.</p></div>
+        <div class="spinner-wrap" id="batchSpinner" style="display:none"><div class="spinner"></div><p>Running batch analysis... this may take a while</p></div>
+        <div id="batchBody" style="display:none;padding:1.25rem"><div id="batchContent"></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Custom Templates ===== -->
+<div class="tab-panel" id="tab-templates" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Create Template</h3></div>
+        <div class="form-group"><label class="form-label">Template Name</label><input type="text" id="tmplName" class="form-input" placeholder="e.g. SWOT Analysis" /></div>
+        <div class="form-group"><label class="form-label">Description (optional)</label><input type="text" id="tmplDesc" class="form-input" placeholder="Brief description of what this does" /></div>
+        <div class="form-group"><label class="form-label">Analysis Prompt</label><textarea id="tmplPrompt" class="form-input" rows="6" style="resize:vertical" placeholder="Perform a SWOT analysis of this document:&#10;## Strengths&#10;## Weaknesses&#10;## Opportunities&#10;## Threats&#10;## Strategic Recommendations"></textarea></div>
+        <div class="form-group" style="padding-top:0"><button class="btn btn-primary btn-full" onclick="saveTemplate()">Save Template</button></div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Apply Template</h3></div>
+        <div class="form-group"><label class="form-label">Select Document</label>
+          <select id="tmplDoc" class="form-input">{% for doc in documents %}<option value="{{ doc.id }}">{{ doc.original_name }}</option>{% endfor %}</select></div>
+        <div class="form-group"><label class="form-label">Select Template</label>
+          <select id="tmplSelect" class="form-input"><option value="">-- Choose template --</option>{% for t in templates %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</select></div>
+        <div class="form-group" style="padding-top:0"><button class="btn btn-primary btn-full" onclick="applyTemplate()" {% if not documents or not templates %}disabled{% endif %} id="applyTmplBtn">Apply Template</button></div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><h3 class="card-title">Saved Templates</h3></div>
+        <div id="tmplList">
+          {% if templates %}{% for t in templates %}
+          <div class="doc-row" id="tmpl-{{ t.id }}">
+            <div class="doc-info"><span class="doc-name">{{ t.name }}</span><span class="doc-meta">{{ t.description or 'No description' }}</span></div>
+            <button class="btn btn-sm btn-danger" onclick="deleteTemplate({{ t.id }}, this)">Delete</button>
+          </div>
+          {% endfor %}{% else %}<div class="empty-state" style="padding:2rem"><p>No templates yet. Create one on the left.</p></div>{% endif %}
+        </div>
+      </div>
+      <div class="card result-card" style="margin-top:1rem">
+        <div class="result-placeholder" id="tmplResultPlaceholder"><p>Apply a template to see results here.</p></div>
+        <div class="spinner-wrap" id="tmplSpinner" style="display:none"><div class="spinner"></div><p>Running template analysis...</p></div>
+        <div id="tmplResultBody" style="display:none">
+          <div class="result-header"><span class="result-type-label" id="tmplResultLabel"></span><button class="btn btn-sm" onclick="copyEl('tmplResultContent')">Copy</button></div>
+          <div class="markdown-body" id="tmplResultContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Export ===== -->
+<div class="tab-panel" id="tab-export" style="display:none">
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Export Analysis Results</h3></div>
+    <p style="padding:.75rem 1.25rem;font-size:.88rem;color:var(--text-secondary)">Download cached analysis results as formatted Markdown files. Run an analysis first if no results appear.</p>
+    <div id="exportList">
+      {% if documents %}
+        {% for doc in documents %}
+          {% if doc.analysis_types %}
+          <div class="doc-row-full">
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info">
+              <span class="doc-name">{{ doc.original_name }}</span>
+              <span class="doc-meta">{{ doc.analysis_types|join(', ') }} available</span>
+            </div>
+            <div class="doc-actions" style="flex-wrap:wrap;gap:.4rem">
+              {% for atype in doc.analysis_types %}
+              <a href="/api/export/{{ doc.id }}/{{ atype }}" class="btn btn-sm">↓ {{ atype }}</a>
+              {% endfor %}
+            </div>
+          </div>
+          {% endif %}
+        {% endfor %}
+        {% if not documents|selectattr("analysis_types")|list %}
+        <div class="empty-state"><p>No analyzed documents yet. Run an analysis on the <a href="/analyze">Analyze page</a> first.</p></div>
+        {% endif %}
+      {% else %}
+        <div class="empty-state"><p>No documents uploaded yet.</p></div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display='none');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-'+name).style.display='block';
+  btn.classList.add('active');
+}
+function copyEl(id) {
+  navigator.clipboard.writeText(document.getElementById(id).innerText)
+    .then(()=>showToast('Copied!','success'));
+}
+function toggleAllBatch(cb) {
+  document.querySelectorAll('.batchDoc').forEach(c=>c.checked=cb.checked);
+}
+
+// Timeline
+async function runTimeline() {
+  const docId = document.querySelector('input[name="tlDoc"]:checked')?.value;
+  if (!docId) { showToast('Select a document','warning'); return; }
+  document.getElementById('tlPlaceholder').style.display='none';
+  document.getElementById('tlBody').style.display='none';
+  document.getElementById('tlSpinner').style.display='flex';
+  try {
+    const resp = await fetch(`/api/timeline/${docId}`,{method:'POST'});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    document.getElementById('tlDocName').textContent = data.doc_name;
+    renderTimeline(data.events);
+    document.getElementById('tlSpinner').style.display='none';
+    document.getElementById('tlBody').style.display='block';
+    showToast(`Found ${data.events.length} events`,'success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('tlSpinner').style.display='none'; document.getElementById('tlPlaceholder').style.display='flex'; }
+}
+
+function renderTimeline(events) {
+  const typeColors = {deadline:'var(--red)',milestone:'var(--accent)',historical:'var(--purple)',scheduled:'var(--green)'};
+  const html = events.map(e=>`
+    <div class="tl-item">
+      <div class="tl-dot" style="background:${typeColors[e.type]||'var(--text-muted)'}"></div>
+      <div class="tl-content">
+        <div class="tl-header">
+          <span class="tl-date">${escHtml(e.date)}</span>
+          <span class="tl-type" style="color:${typeColors[e.type]||'var(--text-muted)'}">${e.type||'event'}</span>
+        </div>
+        <div class="tl-event">${escHtml(e.event)}</div>
+        ${e.description?`<div class="tl-desc">${escHtml(e.description)}</div>`:''}
+      </div>
+    </div>`).join('');
+  document.getElementById('tlContent').innerHTML = html || '<p style="color:var(--text-muted)">No timeline events found.</p>';
+}
+
+// Action items
+async function runActions() {
+  const docId = document.querySelector('input[name="actDoc"]:checked')?.value;
+  if (!docId) { showToast('Select a document','warning'); return; }
+  document.getElementById('actPlaceholder').style.display='none';
+  document.getElementById('actBody').style.display='none';
+  document.getElementById('actSpinner').style.display='flex';
+  try {
+    const resp = await fetch(`/api/actions/${docId}`,{method:'POST'});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    document.getElementById('actDocName').textContent = data.doc_name;
+    renderActions(data.actions);
+    document.getElementById('actSpinner').style.display='none';
+    document.getElementById('actBody').style.display='block';
+    showToast(`Found ${data.actions.length} action items`,'success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('actSpinner').style.display='none'; document.getElementById('actPlaceholder').style.display='flex'; }
+}
+
+function renderActions(actions) {
+  const priColors = {high:'var(--red)',medium:'var(--yellow)',low:'var(--green)'};
+  const html = actions.map((a,i)=>`
+    <div class="action-item">
+      <div class="action-header">
+        <label class="action-check"><input type="checkbox" /><span class="action-task">${escHtml(a.task)}</span></label>
+        <span class="action-priority" style="color:${priColors[a.priority]||'var(--text-muted)'}">${a.priority||'medium'}</span>
+      </div>
+      <div class="action-meta">
+        <span>👤 ${escHtml(a.owner||'Unassigned')}</span>
+        <span>📅 ${escHtml(a.deadline||'Not specified')}</span>
+      </div>
+      ${a.context?`<div class="action-context">"${escHtml(a.context)}"</div>`:''}
+    </div>`).join('');
+  document.getElementById('actContent').innerHTML = html || '<p style="color:var(--text-muted)">No action items found.</p>';
+}
+
+function copyActionsText() {
+  navigator.clipboard.writeText(document.getElementById('actContent').innerText)
+    .then(()=>showToast('Copied!','success'));
+}
+
+// Readability
+async function runComplexity() {
+  const docId = document.querySelector('input[name="cxDoc"]:checked')?.value;
+  if (!docId) { showToast('Select a document','warning'); return; }
+  document.getElementById('cxPlaceholder').style.display='none';
+  document.getElementById('cxBody').style.display='none';
+  document.getElementById('cxSpinner').style.display='flex';
+  try {
+    const resp = await fetch(`/api/complexity/${docId}`);
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    renderComplexity(data);
+    document.getElementById('cxSpinner').style.display='none';
+    document.getElementById('cxBody').style.display='block';
+    showToast('Readability analysis complete!','success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('cxSpinner').style.display='none'; document.getElementById('cxPlaceholder').style.display='flex'; }
+}
+
+function renderComplexity(d) {
+  const score = d.flesch_reading_ease;
+  const color = score>=70?'var(--green)':score>=50?'var(--yellow)':'var(--red)';
+  document.getElementById('cxContent').innerHTML = `
+    <div class="cx-score-wrap">
+      <div class="cx-big-score" style="color:${color}">${score}</div>
+      <div class="cx-score-label">${d.ease_label}</div>
+      <div class="cx-score-sub">Flesch Reading Ease</div>
+    </div>
+    <div class="cx-stats-grid">
+      <div class="cx-stat"><span class="cx-stat-val">${d.grade_level}</span><span class="cx-stat-label">Grade Level</span></div>
+      <div class="cx-stat"><span class="cx-stat-val">${d.words.toLocaleString()}</span><span class="cx-stat-label">Words</span></div>
+      <div class="cx-stat"><span class="cx-stat-val">${d.sentences.toLocaleString()}</span><span class="cx-stat-label">Sentences</span></div>
+      <div class="cx-stat"><span class="cx-stat-val">${d.syllables.toLocaleString()}</span><span class="cx-stat-label">Syllables</span></div>
+      <div class="cx-stat"><span class="cx-stat-val">${d.avg_words_per_sentence}</span><span class="cx-stat-label">Words/Sentence</span></div>
+      <div class="cx-stat"><span class="cx-stat-val">${d.avg_syllables_per_word}</span><span class="cx-stat-label">Syllables/Word</span></div>
+    </div>`;
+}
+
+// Scoring
+async function runScoring() {
+  const docId = document.querySelector('input[name="scoreDoc"]:checked')?.value;
+  const criteria = document.getElementById('scoreCriteria').value.trim();
+  if (!docId || !criteria) { showToast('Select a document and enter criteria','warning'); return; }
+  document.getElementById('scorePlaceholder').style.display='none';
+  document.getElementById('scoreBody').style.display='none';
+  document.getElementById('scoreSpinner').style.display='flex';
+  try {
+    const resp = await fetch('/api/score',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_id:docId,criteria})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    document.getElementById('scoreContent').innerHTML=safeMarkdown(data.result);
+    document.getElementById('scoreSpinner').style.display='none';
+    document.getElementById('scoreBody').style.display='block';
+    showToast('Scoring complete!','success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('scoreSpinner').style.display='none'; document.getElementById('scorePlaceholder').style.display='flex'; }
+}
+
+// Batch
+async function runBatch() {
+  const ids = Array.from(document.querySelectorAll('.batchDoc:checked')).map(c=>c.value);
+  const atype = document.getElementById('batchType').value;
+  if (!ids.length) { showToast('Select at least one document','warning'); return; }
+  document.getElementById('batchPlaceholder').style.display='none';
+  document.getElementById('batchBody').style.display='none';
+  document.getElementById('batchSpinner').style.display='flex';
+  try {
+    const resp = await fetch('/api/batch-analyze',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({doc_ids:ids,type:atype})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    renderBatch(data.results);
+    document.getElementById('batchSpinner').style.display='none';
+    document.getElementById('batchBody').style.display='block';
+    showToast(`Batch complete: ${data.results.length} documents`,'success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('batchSpinner').style.display='none'; document.getElementById('batchPlaceholder').style.display='flex'; }
+}
+
+function renderBatch(results) {
+  const html = results.map(r=>`
+    <div class="batch-result">
+      <div class="batch-result-header">
+        <span class="doc-name">${escHtml(r.name)}</span>
+        ${r.cached?'<span class="cached-badge">⚡ cached</span>':''}
+        ${r.error?'<span class="badge" style="color:var(--red);border-color:var(--red)">Error</span>':''}
+      </div>
+      ${r.error?`<p style="color:var(--red);font-size:.82rem;padding:.5rem 0">${escHtml(r.error)}</p>`
+               :`<div class="markdown-body" style="padding:.75rem 0">${safeMarkdown(r.result)}</div>`}
+    </div>`).join('');
+  document.getElementById('batchContent').innerHTML=html;
+}
+
+// Templates
+async function saveTemplate() {
+  const name=document.getElementById('tmplName').value.trim();
+  const prompt=document.getElementById('tmplPrompt').value.trim();
+  if (!name||!prompt) { showToast('Name and prompt are required','warning'); return; }
+  const resp = await fetch('/api/templates',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name,description:document.getElementById('tmplDesc').value,prompt})});
+  const data = await resp.json();
+  if (!resp.ok) { showToast(data.error,'error'); return; }
+  showToast('Template saved!','success');
+  location.reload();
+}
+
+async function deleteTemplate(id, btn) {
+  btn.disabled=true;
+  const resp = await fetch(`/api/templates/${id}`,{method:'DELETE'});
+  if (resp.ok) { document.getElementById('tmpl-'+id).remove(); showToast('Deleted','success'); }
+  else { showToast('Delete failed','error'); btn.disabled=false; }
+}
+
+async function applyTemplate() {
+  const docId=document.getElementById('tmplDoc').value;
+  const tmplId=document.getElementById('tmplSelect').value;
+  if (!docId||!tmplId) { showToast('Select a document and template','warning'); return; }
+  document.getElementById('tmplResultPlaceholder').style.display='none';
+  document.getElementById('tmplResultBody').style.display='none';
+  document.getElementById('tmplSpinner').style.display='flex';
+  document.getElementById('applyTmplBtn').disabled=true;
+  try {
+    const resp = await fetch(`/api/analyze-with-template/${docId}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({template_id:parseInt(tmplId)})});
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    document.getElementById('tmplResultLabel').textContent=data.template;
+    document.getElementById('tmplResultContent').innerHTML=safeMarkdown(data.result);
+    document.getElementById('tmplSpinner').style.display='none';
+    document.getElementById('tmplResultBody').style.display='block';
+    showToast('Template applied!','success');
+  } catch(e) { showToast(e.message,'error'); document.getElementById('tmplSpinner').style.display='none'; document.getElementById('tmplResultPlaceholder').style.display='flex'; }
+  finally { document.getElementById('applyTmplBtn').disabled=false; }
+}
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

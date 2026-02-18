@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Smart Search{% endblock %}
+{% block page_title %}Smart Search{% endblock %}
+{% block page_subtitle %}Semantic search across all your documents — finds meaning, not just keywords{% endblock %}
+
+{% block content %}
+<div class="search-hero">
+  <div class="search-bar-wrap">
+    <svg class="search-bar-icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input type="text" id="searchInput" class="search-bar-input"
+      placeholder="e.g. What documents discuss budget constraints? or Find risks related to compliance..."
+      onkeydown="if(event.key==='Enter') runSearch()" autofocus />
+    <button class="btn btn-primary" id="searchBtn" onclick="runSearch()">Search</button>
+  </div>
+  <div class="search-hints">
+    <span>Try:</span>
+    <button class="search-hint-pill" onclick="setQuery('documents about risk management')">risk management</button>
+    <button class="search-hint-pill" onclick="setQuery('financial projections and forecasts')">financial projections</button>
+    <button class="search-hint-pill" onclick="setQuery('action items and deadlines')">action items</button>
+    <button class="search-hint-pill" onclick="setQuery('agreements and contracts')">agreements & contracts</button>
+  </div>
+</div>
+
+<!-- Spinner -->
+<div class="spinner-wrap" id="searchSpinner" style="display:none">
+  <div class="spinner"></div>
+  <p>Searching across your documents...</p>
+</div>
+
+<!-- Results -->
+<div id="searchResults" style="display:none">
+  <div class="search-results-header">
+    <span id="searchResultsLabel"></span>
+    <span class="search-query-badge" id="searchQueryBadge"></span>
+  </div>
+  <div id="searchResultsList"></div>
+</div>
+
+<!-- Empty -->
+<div id="searchEmpty" style="display:none" class="empty-state" style="margin-top:3rem">
+  <svg viewBox="0 0 24 24" width="48" height="48" opacity=".3"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+  <p>No relevant documents found for your query.<br>Try different keywords or upload more documents.</p>
+</div>
+
+<!-- No docs -->
+<div id="noDocs" class="card" style="margin-top:1.5rem;{% if documents_exist %}display:none{% endif %}">
+  <div class="empty-state">
+    <svg viewBox="0 0 24 24" width="48" height="48" opacity=".3"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/></svg>
+    <p>No documents uploaded yet. <a href="/documents">Upload some to search across.</a></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function setQuery(q) {
+  document.getElementById('searchInput').value = q;
+  runSearch();
+}
+
+async function runSearch() {
+  const query = document.getElementById('searchInput').value.trim();
+  if (!query) { showToast('Enter a search query', 'warning'); return; }
+
+  document.getElementById('searchResults').style.display = 'none';
+  document.getElementById('searchEmpty').style.display = 'none';
+  document.getElementById('searchSpinner').style.display = 'flex';
+  document.getElementById('searchBtn').disabled = true;
+
+  try {
+    const resp = await fetch('/api/search', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({query})
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error || 'Search failed');
+
+    if (!data.results.length) {
+      document.getElementById('searchEmpty').style.display = 'flex';
+    } else {
+      document.getElementById('searchResultsLabel').textContent = `${data.results.length} result${data.results.length !== 1 ? 's' : ''}`;
+      document.getElementById('searchQueryBadge').textContent = `"${query}"`;
+      renderResults(data.results);
+      document.getElementById('searchResults').style.display = 'block';
+    }
+  } catch(e) {
+    showToast(e.message, 'error');
+  } finally {
+    document.getElementById('searchSpinner').style.display = 'none';
+    document.getElementById('searchBtn').disabled = false;
+  }
+}
+
+function renderResults(results) {
+  const list = document.getElementById('searchResultsList');
+  list.innerHTML = results.map(r => `
+    <div class="search-result-card">
+      <div class="search-result-header">
+        <div class="search-result-meta">
+          <span class="doc-ext ext-${getExt(r.name)}">${getExt(r.name).toUpperCase()}</span>
+          <span class="search-result-name">${escHtml(r.name)}</span>
+        </div>
+        <div class="search-result-score">
+          <div class="score-bar"><div class="score-fill" style="width:${r.score}%"></div></div>
+          <span class="score-label">${r.score}% match</span>
+        </div>
+      </div>
+      <p class="search-result-snippet">${escHtml(r.snippet || '')}</p>
+      <p class="search-result-reason"><em>${escHtml(r.reason || '')}</em></p>
+      <div class="search-result-actions">
+        <a href="/analyze?doc=${r.doc_id}" class="btn btn-sm">Analyze</a>
+        <a href="/research?doc=${r.doc_id}" class="btn btn-sm">Chat</a>
+        <button class="btn btn-sm" onclick="openPreview('${r.doc_id}')">Preview</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function getExt(name) {
+  return (name || '').split('.').pop().toLowerCase() || 'txt';
+}
+
+function escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

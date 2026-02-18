@@ -46,6 +46,21 @@
         <svg viewBox="0 0 24 24"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
         Presentations
       </a>
+
+      <div class="nav-section-label">Intelligence</div>
+
+      <a href="/compare" class="nav-item {% if request.path == '/compare' %}active{% endif %}">
+        <svg viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>
+        Compare & Verify
+      </a>
+      <a href="/search" class="nav-item {% if request.path == '/search' %}active{% endif %}">
+        <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        Smart Search
+      </a>
+      <a href="/tools" class="nav-item {% if request.path == '/tools' %}active{% endif %}">
+        <svg viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/></svg>
+        Tools
+      </a>
     </nav>
 
     <div class="sidebar-footer">

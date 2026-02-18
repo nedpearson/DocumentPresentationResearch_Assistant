@@ -106,6 +106,15 @@ class ChatMessage(db.Model):
     created_at = db.Column(db.DateTime,   default=datetime.utcnow)
 
 
+class CustomTemplate(db.Model):
+    __tablename__ = "custom_templates"
+    id          = db.Column(db.Integer,    primary_key=True, autoincrement=True)
+    name        = db.Column(db.String(100), nullable=False)
+    description = db.Column(db.String(255), nullable=True)
+    prompt      = db.Column(db.Text,       nullable=False)
+    created_at  = db.Column(db.DateTime,   default=datetime.utcnow)
+
+
 with app.app_context():
     db.create_all()
 
@@ -490,6 +499,488 @@ def download(filename):
 @app.route("/api/stats")
 def stats():
     return jsonify(_stats())
+
+# ---------------------------------------------------------------------------
+# Reading complexity (pure Python, no AI)
+# ---------------------------------------------------------------------------
+
+def _count_syllables(word):
+    word = word.lower().strip(".,!?;:\"'()-")
+    if not word:
+        return 0
+    count = 0
+    prev_vowel = False
+    for ch in word:
+        v = ch in "aeiouy"
+        if v and not prev_vowel:
+            count += 1
+        prev_vowel = v
+    if word.endswith("e") and count > 1:
+        count -= 1
+    return max(1, count)
+
+
+def _flesch(text):
+    import re as _re
+    sentences = [s.strip() for s in _re.split(r"[.!?]+", text) if s.strip()]
+    words     = [w for w in text.split() if w.strip(".,!?;:\"'()-")]
+    if not sentences or not words:
+        return None
+    ns = len(sentences); nw = len(words)
+    nsyl = sum(_count_syllables(w) for w in words)
+    fre   = 206.835 - 1.015 * (nw / ns) - 84.6 * (nsyl / nw)
+    grade = 0.39 * (nw / ns) + 11.8 * (nsyl / nw) - 15.59
+    ease_label = (
+        "Very Easy" if fre >= 90 else "Easy" if fre >= 80 else
+        "Fairly Easy" if fre >= 70 else "Standard" if fre >= 60 else
+        "Fairly Difficult" if fre >= 50 else "Difficult" if fre >= 30 else "Very Confusing"
+    )
+    return {
+        "flesch_reading_ease":     round(max(0, min(100, fre)), 1),
+        "ease_label":              ease_label,
+        "grade_level":             round(max(0, grade), 1),
+        "words":                   nw,
+        "sentences":               ns,
+        "syllables":               nsyl,
+        "avg_words_per_sentence":  round(nw / ns, 1),
+        "avg_syllables_per_word":  round(nsyl / nw, 2),
+    }
+
+
+@app.route("/api/complexity/<doc_id>")
+def reading_complexity(doc_id):
+    doc = Document.query.get(doc_id)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+    if not doc.text:
+        return jsonify({"error": "No extractable text"}), 400
+    result = _flesch(doc.text)
+    if not result:
+        return jsonify({"error": "Could not compute readability (too short)"}), 400
+    return jsonify(result)
+
+
+# ---------------------------------------------------------------------------
+# Semantic search
+# ---------------------------------------------------------------------------
+
+@app.route("/api/search", methods=["POST"])
+@limiter.limit("30 per hour")
+def semantic_search():
+    data  = request.json or {}
+    query = data.get("query", "").strip()
+    if not query:
+        return jsonify({"error": "Query is required"}), 400
+
+    docs = Document.query.filter(Document.has_text == True).all()
+    if not docs:
+        return jsonify({"results": [], "message": "No documents with text found"})
+
+    # Build compact index for Claude to rank
+    index = "\n".join(
+        f"[{d.id}] {d.original_name}: {trunc(d.text, 600)}"
+        for d in docs
+    )
+    system = "You are a semantic search engine. Rank documents by relevance to the query."
+    prompt = (
+        f"Query: {query}\n\nDocuments:\n{index}\n\n"
+        "Return ONLY valid JSON (no fences):\n"
+        '{"results":[{"doc_id":"...","score":0-100,"snippet":"...","reason":"..."}]}\n'
+        "Sort by score descending. Include only docs with score > 20. snippet = 1-2 sentences most relevant to query."
+    )
+    try:
+        raw = call_claude(system, prompt)
+        raw = re.sub(r"```(?:json)?\s*", "", raw).strip()
+        m = re.search(r'\{[\s\S]*\}', raw)
+        if not m:
+            raise ValueError("No JSON in response")
+        results = json.loads(m.group()).get("results", [])
+        # Attach document names
+        doc_map = {d.id: d.original_name for d in docs}
+        for r in results:
+            r["name"] = doc_map.get(r.get("doc_id"), "Unknown")
+        return jsonify({"results": results, "query": query})
+    except Exception as e:
+        logger.error(f"Search error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Multi-document comparison
+# ---------------------------------------------------------------------------
+
+@app.route("/api/compare", methods=["POST"])
+@limiter.limit("10 per hour")
+def compare_docs():
+    data    = request.json or {}
+    doc_ids = data.get("doc_ids", [])
+    focus   = data.get("focus", "").strip()
+
+    if len(doc_ids) < 2:
+        return jsonify({"error": "Select at least 2 documents to compare"}), 400
+
+    parts = []
+    for did in doc_ids:
+        doc = Document.query.get(did)
+        if doc and doc.text:
+            parts.append(f"### Document: {doc.original_name}\n\n{trunc(doc.text, 15000)}")
+    if len(parts) < 2:
+        return jsonify({"error": "At least 2 documents must have extractable text"}), 400
+
+    combined = "\n\n---\n\n".join(parts)
+    focus_line = f"Focus specifically on: {focus}\n\n" if focus else ""
+    system = "You are an expert comparative document analyst."
+    prompt = (
+        f"{focus_line}Compare these documents in depth:\n\n{combined}\n\n"
+        "Provide:\n## Overview\n## Key Agreements\n## Key Differences\n"
+        "## Conflicting Claims\n## Unique Contributions per Document\n## Synthesis & Recommendations"
+    )
+    try:
+        result = call_claude(system, prompt)
+        return jsonify({"result": result})
+    except Exception as e:
+        logger.error(f"Compare error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Fact verification
+# ---------------------------------------------------------------------------
+
+@app.route("/api/verify-facts", methods=["POST"])
+@limiter.limit("10 per hour")
+def verify_facts():
+    data              = request.json or {}
+    source_id         = data.get("source_doc_id")
+    reference_ids     = data.get("reference_doc_ids", [])
+
+    if not source_id or not reference_ids:
+        return jsonify({"error": "Provide a source document and at least one reference"}), 400
+
+    source = Document.query.get(source_id)
+    if not source or not source.text:
+        return jsonify({"error": "Source document not found or has no text"}), 404
+
+    refs = []
+    for rid in reference_ids:
+        d = Document.query.get(rid)
+        if d and d.text:
+            refs.append(f"### {d.original_name}\n\n{trunc(d.text, 12000)}")
+
+    if not refs:
+        return jsonify({"error": "No valid reference documents with text"}), 400
+
+    system = "You are a fact-checking expert who verifies claims across documents."
+    prompt = (
+        f"Source document to fact-check:\n\n### {source.original_name}\n\n{trunc(source.text, 15000)}\n\n"
+        f"Reference documents:\n\n{'---'.join(refs)}\n\n"
+        "For each significant claim in the source document, verify it against the references.\n"
+        "## ✅ Supported Claims\n## ❌ Contradicted Claims\n## ⚠️ Unverifiable Claims\n## 📊 Verification Summary"
+    )
+    try:
+        result = call_claude(system, prompt)
+        return jsonify({"result": result})
+    except Exception as e:
+        logger.error(f"Fact verify error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Contradiction detection
+# ---------------------------------------------------------------------------
+
+@app.route("/api/contradictions/<doc_id>", methods=["POST"])
+@limiter.limit("15 per hour")
+def detect_contradictions(doc_id):
+    doc = Document.query.get(doc_id)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+    if not doc.text:
+        return jsonify({"error": "Document has no extractable text"}), 400
+
+    system = "You are a logical consistency analyst specializing in finding contradictions."
+    prompt = (
+        f"Analyze this document for internal contradictions and inconsistencies:\n\n"
+        f"{trunc(doc.text)}\n\n"
+        "Find:\n## Direct Contradictions (statements that directly conflict)\n"
+        "## Logical Inconsistencies (claims that can't both be true)\n"
+        "## Ambiguities (statements with conflicting interpretations)\n"
+        "## Data Inconsistencies (conflicting numbers, dates, or facts)\n"
+        "## Overall Consistency Assessment\n\n"
+        "For each issue, quote the conflicting passages and explain why they contradict. "
+        "If no contradictions found, say so clearly."
+    )
+    try:
+        result = call_claude(system, prompt)
+        return jsonify({"result": result})
+    except Exception as e:
+        logger.error(f"Contradiction error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Timeline extraction
+# ---------------------------------------------------------------------------
+
+@app.route("/api/timeline/<doc_id>", methods=["POST"])
+@limiter.limit("15 per hour")
+def extract_timeline(doc_id):
+    doc = Document.query.get(doc_id)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+    if not doc.text:
+        return jsonify({"error": "Document has no extractable text"}), 400
+
+    system = "You are an expert at extracting temporal information from documents."
+    prompt = (
+        f"Extract all dates, events, deadlines, and time-based information from:\n\n{trunc(doc.text)}\n\n"
+        "Return ONLY valid JSON (no fences):\n"
+        '{"events":[{"date":"...","event":"...","description":"...","type":"deadline|milestone|historical|scheduled"}]}\n'
+        "Sort chronologically. date can be approximate (e.g. 'Q1 2024', 'Early 2023'). "
+        "Include all time references even if approximate."
+    )
+    try:
+        raw = call_claude(system, prompt)
+        raw = re.sub(r"```(?:json)?\s*", "", raw).strip()
+        m = re.search(r'\{[\s\S]*\}', raw)
+        if not m:
+            raise ValueError("No JSON in response")
+        events = json.loads(m.group()).get("events", [])
+        return jsonify({"events": events, "doc_name": doc.original_name})
+    except Exception as e:
+        logger.error(f"Timeline error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Action item extraction
+# ---------------------------------------------------------------------------
+
+@app.route("/api/actions/<doc_id>", methods=["POST"])
+@limiter.limit("15 per hour")
+def extract_actions(doc_id):
+    doc = Document.query.get(doc_id)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+    if not doc.text:
+        return jsonify({"error": "Document has no extractable text"}), 400
+
+    system = "You are an expert at extracting actionable tasks, commitments, and responsibilities."
+    prompt = (
+        f"Extract all action items, tasks, commitments, and responsibilities from:\n\n{trunc(doc.text)}\n\n"
+        "Return ONLY valid JSON (no fences):\n"
+        '{"actions":[{"task":"...","owner":"...","deadline":"...","priority":"high|medium|low","context":"..."}]}\n'
+        "owner = person/team responsible (or 'Unassigned'). deadline = date or 'Not specified'. "
+        "context = brief quote or context from the document."
+    )
+    try:
+        raw = call_claude(system, prompt)
+        raw = re.sub(r"```(?:json)?\s*", "", raw).strip()
+        m = re.search(r'\{[\s\S]*\}', raw)
+        if not m:
+            raise ValueError("No JSON in response")
+        actions = json.loads(m.group()).get("actions", [])
+        return jsonify({"actions": actions, "doc_name": doc.original_name})
+    except Exception as e:
+        logger.error(f"Action items error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Document scoring against custom criteria
+# ---------------------------------------------------------------------------
+
+@app.route("/api/score", methods=["POST"])
+@limiter.limit("10 per hour")
+def score_document():
+    data     = request.json or {}
+    doc_id   = data.get("doc_id")
+    criteria = data.get("criteria", "").strip()
+
+    if not doc_id or not criteria:
+        return jsonify({"error": "Document and criteria are required"}), 400
+
+    doc = Document.query.get(doc_id)
+    if not doc or not doc.text:
+        return jsonify({"error": "Document not found or has no text"}), 404
+
+    system = "You are an expert document evaluator who scores documents against specific criteria."
+    prompt = (
+        f"Score this document against the following criteria:\n\n"
+        f"**Criteria / Rubric:**\n{criteria}\n\n"
+        f"**Document:**\n{trunc(doc.text)}\n\n"
+        "Provide:\n## Overall Score (X/10)\n## Criteria Breakdown\n"
+        "(Score each criterion 0-10 with justification and specific evidence from the document)\n"
+        "## Strengths\n## Gaps & Missing Elements\n## Recommendations to Improve Score"
+    )
+    try:
+        result = call_claude(system, prompt)
+        return jsonify({"result": result})
+    except Exception as e:
+        logger.error(f"Scoring error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Batch analysis
+# ---------------------------------------------------------------------------
+
+@app.route("/api/batch-analyze", methods=["POST"])
+@limiter.limit("5 per hour")
+def batch_analyze():
+    data    = request.json or {}
+    doc_ids = data.get("doc_ids", [])
+    atype   = data.get("type", "summary")
+
+    if not doc_ids:
+        return jsonify({"error": "No documents selected"}), 400
+    if atype not in ANALYSIS_PROMPTS:
+        return jsonify({"error": f"Unknown analysis type '{atype}'"}), 400
+
+    results = []
+    for did in doc_ids:
+        doc = Document.query.get(did)
+        if not doc or not doc.text:
+            results.append({"doc_id": did, "name": did, "error": "No text", "cached": False})
+            continue
+
+        # Check cache first
+        cached = AnalysisResult.query.filter_by(doc_id=did, analysis_type=atype).first()
+        if cached:
+            results.append({"doc_id": did, "name": doc.original_name,
+                            "result": cached.result, "cached": True})
+            continue
+
+        # Run analysis
+        prompt = f"{ANALYSIS_PROMPTS[atype]}\n\nDocument content:\n\n{trunc(doc.text)}"
+        system = ("You are an expert document analyst. Provide structured, insightful analysis. "
+                  "Use markdown headers, bullet points, and bold text for clarity.")
+        try:
+            result = call_claude(system, prompt)
+            db.session.add(AnalysisResult(doc_id=did, analysis_type=atype,
+                                          result=result, model_used="claude-opus-4-6"))
+            db.session.commit()
+            results.append({"doc_id": did, "name": doc.original_name,
+                            "result": result, "cached": False})
+        except Exception as e:
+            logger.error(f"Batch analysis error for {did}: {e}")
+            results.append({"doc_id": did, "name": doc.original_name,
+                            "error": str(e), "cached": False})
+
+    return jsonify({"results": results})
+
+
+# ---------------------------------------------------------------------------
+# Custom analysis templates
+# ---------------------------------------------------------------------------
+
+@app.route("/api/templates", methods=["GET"])
+def list_templates():
+    tmpls = CustomTemplate.query.order_by(CustomTemplate.created_at.desc()).all()
+    return jsonify({"templates": [
+        {"id": t.id, "name": t.name, "description": t.description,
+         "prompt": t.prompt, "created_at": t.created_at.isoformat()}
+        for t in tmpls
+    ]})
+
+
+@app.route("/api/templates", methods=["POST"])
+def create_template():
+    data = request.json or {}
+    name   = data.get("name", "").strip()
+    prompt = data.get("prompt", "").strip()
+    if not name or not prompt:
+        return jsonify({"error": "Name and prompt are required"}), 400
+    t = CustomTemplate(name=name, description=data.get("description", ""), prompt=prompt)
+    db.session.add(t)
+    db.session.commit()
+    return jsonify({"id": t.id, "name": t.name, "message": "Template created"})
+
+
+@app.route("/api/templates/<int:tmpl_id>", methods=["DELETE"])
+def delete_template(tmpl_id):
+    t = CustomTemplate.query.get(tmpl_id)
+    if not t:
+        return jsonify({"error": "Template not found"}), 404
+    db.session.delete(t)
+    db.session.commit()
+    return jsonify({"message": "Template deleted"})
+
+
+@app.route("/api/analyze-with-template/<doc_id>", methods=["POST"])
+@limiter.limit("20 per hour")
+def analyze_with_template(doc_id):
+    doc = Document.query.get(doc_id)
+    if not doc or not doc.text:
+        return jsonify({"error": "Document not found or has no text"}), 404
+
+    data     = request.json or {}
+    tmpl_id  = data.get("template_id")
+    tmpl     = CustomTemplate.query.get(tmpl_id)
+    if not tmpl:
+        return jsonify({"error": "Template not found"}), 404
+
+    system = ("You are an expert document analyst. Provide structured, insightful analysis. "
+              "Use markdown headers, bullet points, and bold text for clarity.")
+    prompt = f"{tmpl.prompt}\n\nDocument content:\n\n{trunc(doc.text)}"
+    try:
+        result = call_claude(system, prompt)
+        return jsonify({"result": result, "template": tmpl.name})
+    except Exception as e:
+        logger.error(f"Template analysis error: {e}")
+        return jsonify({"error": str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# Export analysis as markdown
+# ---------------------------------------------------------------------------
+
+@app.route("/api/export/<doc_id>/<atype>")
+def export_analysis(doc_id, atype):
+    doc = Document.query.get(doc_id)
+    if not doc:
+        return jsonify({"error": "Document not found"}), 404
+    cached = AnalysisResult.query.filter_by(doc_id=doc_id, analysis_type=atype).first()
+    if not cached:
+        return jsonify({"error": "No cached analysis found. Run the analysis first."}), 404
+
+    from flask import Response
+    content = (
+        f"# {atype.title()} — {doc.original_name}\n"
+        f"_Generated: {cached.created_at.strftime('%Y-%m-%d %H:%M')} · Model: {cached.model_used}_\n\n"
+        f"---\n\n{cached.result}"
+    )
+    safe_name = secure_filename(doc.original_name.rsplit(".", 1)[0])[:40]
+    filename  = f"{safe_name}_{atype}.md"
+    return Response(
+        content,
+        mimetype="text/markdown",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+    )
+
+
+# ---------------------------------------------------------------------------
+# New page routes
+# ---------------------------------------------------------------------------
+
+@app.route("/compare")
+def compare_page():
+    docs = [d.to_dict() for d in Document.query.order_by(Document.uploaded_at.desc()).all()]
+    return render_template("compare.html", documents=docs)
+
+
+@app.route("/search")
+def search_page():
+    return render_template("search.html")
+
+
+@app.route("/tools")
+def tools_page():
+    docs  = [d.to_dict() for d in Document.query.order_by(Document.uploaded_at.desc()).all()]
+    tmpls = [{"id": t.id, "name": t.name, "description": t.description, "prompt": t.prompt}
+             for t in CustomTemplate.query.order_by(CustomTemplate.created_at.desc()).all()]
+    return render_template("tools.html", documents=docs, templates=tmpls)
+
 
 # ---------------------------------------------------------------------------
 # Error handlers

@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+{% block title %}Compare & Verify{% endblock %}
+{% block page_title %}Compare &amp; Verify{% endblock %}
+{% block page_subtitle %}Multi-document comparison, fact verification, and contradiction detection{% endblock %}
+
+{% block content %}
+<!-- Tab bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('compare', this)">⚖️ Compare Documents</button>
+  <button class="tab-btn" onclick="switchTab('facts', this)">🔬 Fact Verification</button>
+  <button class="tab-btn" onclick="switchTab('contradictions', this)">⚡ Contradiction Detector</button>
+</div>
+
+<!-- ===== Compare Tab ===== -->
+<div class="tab-panel" id="tab-compare">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Documents</h3><span class="badge">Min 2</span></div>
+        {% if documents %}
+          <div class="doc-select-list">
+            {% for doc in documents %}
+            <label class="doc-select-item">
+              <input type="checkbox" name="compareDoc" value="{{ doc.id }}" />
+              <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+              <div class="doc-info">
+                <span class="doc-name">{{ doc.original_name }}</span>
+                <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span>
+              </div>
+            </label>
+            {% endfor %}
+          </div>
+        {% else %}
+          <div class="empty-state"><p>No documents. <a href="/documents">Upload some first.</a></p></div>
+        {% endif %}
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><h3 class="card-title">Focus (optional)</h3></div>
+        <div class="form-group">
+          <input type="text" id="compareFocus" class="form-input" placeholder="e.g. pricing terms, methodology, conclusions..." />
+        </div>
+        <div class="form-group" style="padding-top:0">
+          <button class="btn btn-primary btn-full" onclick="runCompare()" {% if not documents %}disabled{% endif %}>
+            <svg viewBox="0 0 24 24"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>
+            Run Comparison
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card result-card" id="compareResult">
+        <div class="result-placeholder" id="comparePlaceholder">
+          <svg viewBox="0 0 24 24" width="56" height="56" opacity=".2"><path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2v-4M9 21H5a2 2 0 01-2-2v-4m0 0h18"/></svg>
+          <p>Select 2 or more documents and click <strong>Run Comparison</strong>.</p>
+        </div>
+        <div class="spinner-wrap" id="compareSpinner" style="display:none"><div class="spinner"></div><p>Comparing documents...</p></div>
+        <div id="compareBody" style="display:none">
+          <div class="result-header"><span class="result-type-label">Comparison Analysis</span><button class="btn btn-sm" onclick="copyEl('compareContent')">Copy</button></div>
+          <div class="markdown-body" id="compareContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Facts Tab ===== -->
+<div class="tab-panel" id="tab-facts" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Source Document</h3></div>
+        <p class="panel-hint">Claims from this document will be checked:</p>
+        <div class="doc-select-list">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="radio" name="factSource" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="card" style="margin-top:1rem">
+        <div class="card-header"><h3 class="card-title">Reference Documents</h3></div>
+        <p class="panel-hint">Facts will be verified against these:</p>
+        <div class="doc-select-list">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="checkbox" name="factRef" value="{{ doc.id }}" />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info"><span class="doc-name">{{ doc.original_name }}</span></div>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary btn-full" onclick="runFactCheck()" {% if not documents %}disabled{% endif %}>
+            🔬 Verify Facts
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card result-card">
+        <div class="result-placeholder" id="factsPlaceholder">
+          <svg viewBox="0 0 24 24" width="56" height="56" opacity=".2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          <p>Select a source and reference documents, then click <strong>Verify Facts</strong>.</p>
+        </div>
+        <div class="spinner-wrap" id="factsSpinner" style="display:none"><div class="spinner"></div><p>Verifying facts across documents...</p></div>
+        <div id="factsBody" style="display:none">
+          <div class="result-header"><span class="result-type-label">Fact Verification Report</span><button class="btn btn-sm" onclick="copyEl('factsContent')">Copy</button></div>
+          <div class="markdown-body" id="factsContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===== Contradictions Tab ===== -->
+<div class="tab-panel" id="tab-contradictions" style="display:none">
+  <div class="two-col-layout">
+    <div class="panel-left">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title">Select Document</h3></div>
+        <div class="doc-select-list">
+          {% for doc in documents %}
+          <label class="doc-select-item">
+            <input type="radio" name="contraDoc" value="{{ doc.id }}" {% if loop.first %}checked{% endif %} />
+            <div class="doc-ext ext-{{ doc.ext }}">{{ doc.ext.upper() }}</div>
+            <div class="doc-info">
+              <span class="doc-name">{{ doc.original_name }}</span>
+              <span class="doc-meta">{{ "{:,}".format(doc.word_count) }} words</span>
+            </div>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="form-group">
+          <button class="btn btn-primary btn-full" onclick="runContradictions()" {% if not documents %}disabled{% endif %}>
+            ⚡ Detect Contradictions
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="panel-right">
+      <div class="card result-card">
+        <div class="result-placeholder" id="contraPlaceholder">
+          <svg viewBox="0 0 24 24" width="56" height="56" opacity=".2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+          <p>Select a document and click <strong>Detect Contradictions</strong>.</p>
+        </div>
+        <div class="spinner-wrap" id="contraSpinner" style="display:none"><div class="spinner"></div><p>Analyzing for contradictions...</p></div>
+        <div id="contraBody" style="display:none">
+          <div class="result-header"><span class="result-type-label">Contradiction Report</span><button class="btn btn-sm" onclick="copyEl('contraContent')">Copy</button></div>
+          <div class="markdown-body" id="contraContent"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function switchTab(name, btn) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.style.display = 'none');
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).style.display = 'block';
+  btn.classList.add('active');
+}
+
+function showResult(placeholder, spinner, body, contentId, html) {
+  placeholder.style.display = 'none'; spinner.style.display = 'none';
+  document.getElementById(contentId).innerHTML = safeMarkdown(html);
+  body.style.display = 'block';
+}
+
+function copyEl(id) {
+  navigator.clipboard.writeText(document.getElementById(id).innerText)
+    .then(() => showToast('Copied!', 'success'));
+}
+
+async function runCompare() {
+  const ids = Array.from(document.querySelectorAll('input[name="compareDoc"]:checked')).map(c => c.value);
+  if (ids.length < 2) { showToast('Select at least 2 documents', 'warning'); return; }
+  const focus = document.getElementById('compareFocus').value.trim();
+  document.getElementById('comparePlaceholder').style.display = 'none';
+  document.getElementById('compareBody').style.display = 'none';
+  document.getElementById('compareSpinner').style.display = 'flex';
+  try {
+    const resp = await fetch('/api/compare', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({doc_ids:ids, focus}) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    showResult(document.getElementById('comparePlaceholder'), document.getElementById('compareSpinner'),
+               document.getElementById('compareBody'), 'compareContent', data.result);
+    showToast('Comparison complete!', 'success');
+  } catch(e) { showToast(e.message, 'error'); document.getElementById('compareSpinner').style.display='none'; document.getElementById('comparePlaceholder').style.display='flex'; }
+}
+
+async function runFactCheck() {
+  const source = document.querySelector('input[name="factSource"]:checked')?.value;
+  const refs   = Array.from(document.querySelectorAll('input[name="factRef"]:checked')).map(c => c.value);
+  if (!source || !refs.length) { showToast('Select source and at least one reference', 'warning'); return; }
+  document.getElementById('factsPlaceholder').style.display = 'none';
+  document.getElementById('factsBody').style.display = 'none';
+  document.getElementById('factsSpinner').style.display = 'flex';
+  try {
+    const resp = await fetch('/api/verify-facts', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({source_doc_id:source, reference_doc_ids:refs}) });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    showResult(document.getElementById('factsPlaceholder'), document.getElementById('factsSpinner'),
+               document.getElementById('factsBody'), 'factsContent', data.result);
+    showToast('Fact check complete!', 'success');
+  } catch(e) { showToast(e.message, 'error'); document.getElementById('factsSpinner').style.display='none'; document.getElementById('factsPlaceholder').style.display='flex'; }
+}
+
+async function runContradictions() {
+  const docId = document.querySelector('input[name="contraDoc"]:checked')?.value;
+  if (!docId) { showToast('Select a document', 'warning'); return; }
+  document.getElementById('contraPlaceholder').style.display = 'none';
+  document.getElementById('contraBody').style.display = 'none';
+  document.getElementById('contraSpinner').style.display = 'flex';
+  try {
+    const resp = await fetch(`/api/contradictions/${docId}`, { method:'POST' });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.error);
+    showResult(document.getElementById('contraPlaceholder'), document.getElementById('contraSpinner'),
+               document.getElementById('contraBody'), 'contraContent', data.result);
+    showToast('Analysis complete!', 'success');
+  } catch(e) { showToast(e.message, 'error'); document.getElementById('contraSpinner').style.display='none'; document.getElementById('contraPlaceholder').style.display='flex'; }
+}
+</script>
+{% endblock %}
