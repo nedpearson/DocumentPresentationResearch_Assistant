@@ -41,6 +41,8 @@
           </span>
         </div>
         <div class="doc-actions">
+          {% if not doc.has_text %}<span class="badge" style="color:var(--yellow);border-color:var(--yellow);background:rgba(245,158,11,.1)" title="No extractable text">⚠ No text</span>{% endif %}
+          <button class="btn btn-sm" onclick="openPreview('{{ doc.id }}')">Preview</button>
           <a href="/analyze?doc={{ doc.id }}" class="btn btn-sm">Analyze</a>
           <a href="/research?doc={{ doc.id }}" class="btn btn-sm">Chat</a>
           <button class="btn btn-sm btn-danger" onclick="deleteDoc('{{ doc.id }}', this)">Delete</button>

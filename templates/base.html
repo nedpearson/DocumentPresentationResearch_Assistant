@@ -8,8 +8,9 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-  <!-- marked.js for markdown rendering -->
+  <!-- marked.js + DOMPurify for safe markdown rendering -->
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
 </head>
 <body>
   <!-- Sidebar -->
@@ -81,6 +82,22 @@
 
   <!-- Global overlay for mobile -->
   <div class="sidebar-overlay" id="sidebarOverlay" onclick="toggleSidebar()"></div>
+
+  <!-- Text Preview Modal -->
+  <div class="modal-backdrop" id="previewModal" style="display:none" onclick="closePreview(event)">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="previewModalTitle">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title" id="previewModalTitle">Document Preview</h2>
+          <p class="modal-subtitle" id="previewModalMeta"></p>
+        </div>
+        <button class="modal-close" onclick="closePreviewModal()" aria-label="Close preview">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="previewModalBody" class="preview-text"></div>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/js/main.js"></script>
   {% block scripts %}{% endblock %}

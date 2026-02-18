@@ -95,7 +95,7 @@
     div.className = `chat-msg chat-msg-${role}`;
     div.innerHTML = `
       <div class="chat-bubble">
-        ${role === 'assistant' ? '<div class="markdown-body">' + marked.parse(content) + '</div>' : escapeHtml(content)}
+        ${role === 'assistant' ? '<div class="markdown-body">' + safeMarkdown(content) + '</div>' : escapeHtml(content)}
       </div>`;
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;

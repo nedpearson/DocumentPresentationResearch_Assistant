@@ -103,7 +103,10 @@
       <div id="resultContent" style="display:none">
         <div class="result-header">
           <span id="resultTitle" class="result-type-label"></span>
-          <button class="btn btn-sm" onclick="copyResult()">Copy</button>
+          <div style="display:flex;gap:.5rem">
+            <button class="btn btn-sm" onclick="runAnalysis(true)" title="Re-run and overwrite cached result">↻ Refresh</button>
+            <button class="btn btn-sm" onclick="copyResult()">Copy</button>
+          </div>
         </div>
         <div class="markdown-body" id="resultBody"></div>
       </div>
@@ -125,7 +128,7 @@
     if (radio) radio.checked = true;
   }
 
-  async function runAnalysis() {
+  async function runAnalysis(force = false) {
     const docId = document.querySelector('input[name="analyzeDoc"]:checked')?.value;
     const atype = document.querySelector('input[name="analysisType"]:checked')?.value || 'full';
     if (!docId) { showToast('Select a document first', 'warning'); return; }
@@ -144,13 +147,14 @@
       const resp = await fetch(`/api/analyze/${docId}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: atype }),
+        body: JSON.stringify({ type: atype, force }),
       });
       const data = await resp.json();
       if (!resp.ok) throw new Error(data.error || 'Analysis failed');
 
-      document.getElementById('resultTitle').textContent = typeLabels[atype] || atype;
-      document.getElementById('resultBody').innerHTML = marked.parse(data.result);
+      const cachedHtml = data.cached ? ' <span class="cached-badge">⚡ cached</span>' : '';
+      document.getElementById('resultTitle').innerHTML = (typeLabels[atype] || atype) + cachedHtml;
+      document.getElementById('resultBody').innerHTML = safeMarkdown(data.result);
       document.getElementById('resultContent').style.display = 'block';
       showToast('Analysis complete!', 'success');
     } catch (e) {
