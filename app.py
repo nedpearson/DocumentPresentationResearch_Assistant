@@ -1059,6 +1059,11 @@ def tools_page():
     return render_template("tools.html", documents=docs, templates=tmpls)
 
 
+@app.route("/intelligence")
+def intelligence_page():
+    return render_template("intelligence.html")
+
+
 @app.route("/settings")
 def settings_page():
     api_key = os.getenv("ANTHROPIC_API_KEY", "")
