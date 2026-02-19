@@ -6,6 +6,8 @@ venv/
 env/
 uploads/
 outputs/
+instance/
+*.db
 *.pptx
 *.pdf
 .DS_Store
