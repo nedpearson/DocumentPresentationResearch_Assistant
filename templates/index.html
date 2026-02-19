@@ -144,6 +144,7 @@
   });
 
   async function refreshRecentDocs() {
+    // Update stats
     const resp = await fetch('/api/stats');
     if (!resp.ok) return;
     const s = await resp.json();
@@ -151,6 +152,35 @@
     document.getElementById('statAnalyzed').textContent = s.analyzed;
     document.getElementById('statPresentations').textContent = s.presentations;
     document.getElementById('statWords').textContent = s.total_words.toLocaleString();
+
+    // Update recent docs list
+    const docsResp = await fetch('/api/documents');
+    if (!docsResp.ok) return;
+    const docsData = await docsResp.json();
+    const recent = docsData.documents.slice(0, 5);
+    const recentEl = document.getElementById('recentDocs');
+    if (recent.length === 0) {
+      recentEl.innerHTML = '<div class="empty-state"><p>No documents yet. Upload one to get started!</p></div>';
+    } else {
+      const html = recent.map(doc => `
+        <div class="doc-row" data-id="${doc.id}">
+          <div class="doc-ext ext-${doc.ext}">${doc.ext.toUpperCase()}</div>
+          <div class="doc-info">
+            <span class="doc-name">${escapeDocHtml(doc.original_name)}</span>
+            <span class="doc-meta">${doc.word_count.toLocaleString()} words · ${(doc.size/1024).toFixed(1)} KB</span>
+          </div>
+          <div class="doc-actions">
+            <a href="/analyze?doc=${doc.id}" class="icon-btn" title="Analyze">
+              <svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            </a>
+          </div>
+        </div>`).join('');
+      recentEl.innerHTML = html;
+    }
+  }
+
+  function escapeDocHtml(s) {
+    return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
   }
 </script>
 {% endblock %}

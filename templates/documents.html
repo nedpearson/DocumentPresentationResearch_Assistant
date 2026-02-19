@@ -21,6 +21,23 @@
   </div>
 </div>
 
+<!-- URL Ingestion -->
+<div class="card" style="margin-top:1.5rem">
+  <div class="card-header">
+    <h3 class="card-title">Ingest from URL</h3>
+  </div>
+  <div style="padding:1.25rem">
+    <div style="display:flex;gap:.75rem">
+      <input type="text" id="urlInput" class="form-input" placeholder="https://example.com/article" style="flex:1"/>
+      <button class="btn btn-primary" onclick="ingestUrl()" id="ingestBtn">
+        <svg viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Ingest
+      </button>
+    </div>
+    <p style="font-size:.82rem;color:var(--text-muted);margin-top:.5rem">Paste any web URL to download and extract text as a document</p>
+  </div>
+</div>
+
 <div class="card" style="margin-top:1.5rem">
   <div class="card-header">
     <h3 class="card-title">All Documents</h3>
@@ -75,6 +92,32 @@
       showToast('Document deleted', 'success');
     } else {
       showToast('Failed to delete', 'error');
+      btn.disabled = false;
+    }
+  }
+
+  async function ingestUrl() {
+    const url = document.getElementById('urlInput').value.trim();
+    if (!url) { showToast('Enter a URL', 'warning'); return; }
+
+    const btn = document.getElementById('ingestBtn');
+    btn.disabled = true;
+
+    try {
+      const resp = await fetch('/api/ingest-url', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({url})
+      });
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.error || 'Failed to ingest URL');
+
+      showToast(`Ingested: ${data.name}`, 'success');
+      document.getElementById('urlInput').value = '';
+      setTimeout(() => location.reload(), 500);
+    } catch(e) {
+      showToast(e.message, 'error');
+    } finally {
       btn.disabled = false;
     }
   }

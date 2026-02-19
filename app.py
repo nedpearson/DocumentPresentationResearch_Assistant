@@ -130,7 +130,7 @@ def get_client():
     key = os.getenv("ANTHROPIC_API_KEY")
     if not key:
         raise ValueError("ANTHROPIC_API_KEY not set. Add it to your .env file.")
-    return anthropic.Anthropic(api_key=key)
+    return anthropic.Anthropic(api_key=key, max_retries=1, timeout=120.0)
 
 
 def extract_text(filepath):
@@ -368,12 +368,15 @@ def analyze(doc_id):
     if atype not in ANALYSIS_PROMPTS:
         return jsonify({"error": f"Unknown analysis type '{atype}'"}), 400
 
+    # Check if text will be truncated
+    was_truncated = len(doc.text) > 50000
+
     # Cache check — skip if force=true
     if not force:
         cached = AnalysisResult.query.filter_by(doc_id=doc_id, analysis_type=atype).first()
         if cached:
             logger.info(f"Cache hit: doc={doc_id} type={atype}")
-            return jsonify({"result": cached.result, "type": atype, "cached": True})
+            return jsonify({"result": cached.result, "type": atype, "cached": True, "truncated": was_truncated})
 
     prompt = f"{ANALYSIS_PROMPTS[atype]}\n\nDocument content:\n\n{trunc(doc.text)}"
     system = ("You are an expert document analyst. Provide structured, insightful analysis. "
@@ -389,7 +392,7 @@ def analyze(doc_id):
             db.session.add(AnalysisResult(doc_id=doc_id, analysis_type=atype,
                                           result=result, model_used="claude-opus-4-6"))
         db.session.commit()
-        return jsonify({"result": result, "type": atype, "cached": False})
+        return jsonify({"result": result, "type": atype, "cached": False, "truncated": was_truncated})
     except Exception as e:
         logger.error(f"Analysis error doc={doc_id} type={atype}: {e}")
         return jsonify({"error": str(e)}), 500
@@ -424,7 +427,8 @@ def chat():
     system = (
         "You are an expert research assistant. You have access to the following document(s):\n\n"
         f"{context}\n\n"
-        "Answer questions accurately based on the content. Cite specific sections when relevant. "
+        "Answer questions accurately based on the content. "
+        "IMPORTANT: When citing information, reference the source document using [Source: Document Name]. "
         "If information is not in the documents, say so clearly. Use markdown for clarity."
     )
     try:
@@ -499,6 +503,78 @@ def download(filename):
 @app.route("/api/stats")
 def stats():
     return jsonify(_stats())
+
+
+# ---------------------------------------------------------------------------
+# API – URL Ingestion
+# ---------------------------------------------------------------------------
+
+@app.route("/api/ingest-url", methods=["POST"])
+@limiter.limit("10 per hour")
+def ingest_url():
+    import urllib.request
+    from html.parser import HTMLParser
+
+    data = request.json or {}
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "URL is required"}), 400
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "URL must start with http:// or https://"}), 400
+
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 DocIQ/1.0"})
+        with urllib.request.urlopen(req, timeout=30) as response:
+            html_bytes = response.read(5 * 1024 * 1024)
+        html_content = html_bytes.decode("utf-8", errors="ignore")
+    except Exception as e:
+        return jsonify({"error": f"Failed to fetch URL: {str(e)[:100]}"}), 400
+
+    class TextExtractor(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.texts = []
+            self.skip = False
+        def handle_starttag(self, tag, attrs):
+            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
+                self.skip = True
+        def handle_endtag(self, tag):
+            if tag in ("script", "style", "nav", "footer", "head", "noscript"):
+                self.skip = False
+        def handle_data(self, d):
+            if not self.skip and d.strip():
+                self.texts.append(d.strip())
+
+    extractor = TextExtractor()
+    extractor.feed(html_content)
+    text = " ".join(extractor.texts)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    if not text:
+        return jsonify({"error": "No text could be extracted from the URL"}), 400
+
+    from urllib.parse import urlparse
+    parsed = urlparse(url)
+    filename = f"{parsed.netloc}{parsed.path}".replace("/", "_")[:60] or "webpage"
+    filename = re.sub(r"[^\w\-.]", "_", filename) + ".txt"
+
+    doc_id = str(uuid.uuid4())[:8]
+    stored = f"{doc_id}_{filename}"
+    filepath = os.path.join(UPLOAD_FOLDER, stored)
+
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(text)
+
+    doc = Document(
+        id=doc_id, original_name=f"[Web] {parsed.netloc}{parsed.path[:40]}",
+        stored_name=stored, filepath=filepath, ext="txt",
+        size=len(text.encode()), word_count=len(text.split()),
+        char_count=len(text), has_text=True, text=text,
+    )
+    db.session.add(doc)
+    db.session.commit()
+
+    return jsonify({"id": doc_id, "name": doc.original_name, "word_count": doc.word_count})
 
 # ---------------------------------------------------------------------------
 # Reading complexity (pure Python, no AI)
@@ -971,7 +1047,8 @@ def compare_page():
 
 @app.route("/search")
 def search_page():
-    return render_template("search.html")
+    has_docs = Document.query.filter(Document.has_text == True).count() > 0
+    return render_template("search.html", documents_exist=has_docs)
 
 
 @app.route("/tools")
@@ -980,6 +1057,17 @@ def tools_page():
     tmpls = [{"id": t.id, "name": t.name, "description": t.description, "prompt": t.prompt}
              for t in CustomTemplate.query.order_by(CustomTemplate.created_at.desc()).all()]
     return render_template("tools.html", documents=docs, templates=tmpls)
+
+
+@app.route("/settings")
+def settings_page():
+    api_key = os.getenv("ANTHROPIC_API_KEY", "")
+    has_key = bool(api_key)
+    masked_key = f"{api_key[:8]}...{api_key[-4:]}" if has_key and len(api_key) > 12 else ("Set" if has_key else "Not set")
+    stats = _stats()
+    max_upload_mb = app.config["MAX_CONTENT_LENGTH"] // (1024 * 1024)
+    return render_template("settings.html",
+        has_key=has_key, masked_key=masked_key, stats=stats, max_upload_mb=max_upload_mb)
 
 
 # ---------------------------------------------------------------------------

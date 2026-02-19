@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Settings{% endblock %}
+{% block page_title %}Settings & Configuration{% endblock %}
+{% block page_subtitle %}Manage your Document Intelligence setup{% endblock %}
+
+{% block content %}
+<div style="max-width: 800px">
+  <!-- API Configuration -->
+  <div class="card" style="margin-bottom: 1.5rem">
+    <div class="card-header">
+      <h3 class="card-title">API Configuration</h3>
+    </div>
+    <div style="padding: 1.25rem">
+      <div style="margin-bottom: 1rem">
+        <div class="form-label">Anthropic API Key</div>
+        <div style="display: flex; align-items: center; gap: .75rem">
+          <code style="flex: 1; background: var(--bg-hover); padding: .5rem; border-radius: var(--radius-sm); font-size: .85rem">{{ masked_key }}</code>
+          <span class="badge {% if has_key %}badge-green{% endif %}" style="flex-shrink: 0">
+            {% if has_key %}✓ Configured{% else %}⚠ Not Set{% endif %}
+          </span>
+        </div>
+        <p style="font-size: .82rem; color: var(--text-secondary); margin-top: .5rem">
+          Set the <code style="background: var(--bg-hover); padding: .15em .35em; border-radius: 3px">ANTHROPIC_API_KEY</code> environment variable to use AI features.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- System Stats -->
+  <div class="card" style="margin-bottom: 1.5rem">
+    <div class="card-header">
+      <h3 class="card-title">System Statistics</h3>
+    </div>
+    <div style="padding: 1.25rem">
+      <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem">
+        <div>
+          <div style="font-size: .82rem; color: var(--text-secondary); margin-bottom: .3rem">Documents Uploaded</div>
+          <div style="font-size: 1.6rem; font-weight: 700; color: var(--accent)">{{ stats.total_docs }}</div>
+        </div>
+        <div>
+          <div style="font-size: .82rem; color: var(--text-secondary); margin-bottom: .3rem">Analyzed</div>
+          <div style="font-size: 1.6rem; font-weight: 700; color: var(--accent)">{{ stats.analyzed }}</div>
+        </div>
+        <div>
+          <div style="font-size: .82rem; color: var(--text-secondary); margin-bottom: .3rem">Total Words</div>
+          <div style="font-size: 1.6rem; font-weight: 700; color: var(--accent)">{{ "{:,}".format(stats.total_words) }}</div>
+        </div>
+        <div>
+          <div style="font-size: .82rem; color: var(--text-secondary); margin-bottom: .3rem">Presentations</div>
+          <div style="font-size: 1.6rem; font-weight: 700; color: var(--accent)">{{ stats.presentations }}</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Upload Limits -->
+  <div class="card" style="margin-bottom: 1.5rem">
+    <div class="card-header">
+      <h3 class="card-title">Upload Limits</h3>
+    </div>
+    <div style="padding: 1.25rem">
+      <div style="margin-bottom: 1rem">
+        <div class="form-label">Maximum File Size</div>
+        <div style="font-size: 1.1rem; font-weight: 600; color: var(--accent)">{{ max_upload_mb }} MB</div>
+        <p style="font-size: .82rem; color: var(--text-secondary); margin-top: .5rem">
+          Maximum size per document upload. Change via <code style="background: var(--bg-hover); padding: .15em .35em; border-radius: 3px">MAX_CONTENT_LENGTH</code> environment variable.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- About -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title">About</h3>
+    </div>
+    <div style="padding: 1.25rem">
+      <div style="color: var(--text-secondary); font-size: .9rem; line-height: 1.7">
+        <p style="margin-bottom: .75rem"><strong>DocIQ</strong> — Document Intelligence Dashboard</p>
+        <p style="margin-bottom: .75rem">Powered by Claude AI to analyze, compare, and understand your documents with advanced NLP capabilities.</p>
+        <div style="font-size: .82rem; color: var(--text-muted); margin-top: 1rem">
+          <div>✓ Full-text document analysis</div>
+          <div>✓ Multi-document comparison & fact verification</div>
+          <div>✓ Research chat with citations</div>
+          <div>✓ Semantic search & timeline extraction</div>
+          <div>✓ AI-powered presentation generation</div>
+          <div style="margin-top: .5rem">✓ Customizable analysis templates</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

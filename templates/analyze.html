@@ -108,6 +108,9 @@
             <button class="btn btn-sm" onclick="copyResult()">Copy</button>
           </div>
         </div>
+        <div id="truncatedNotice" style="display:none;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.3);border-radius:var(--radius-sm);padding:.75rem 1rem;margin:1.25rem 1.25rem 0;font-size:.82rem;color:var(--yellow)">
+          ⚠️ <strong>Document Truncated:</strong> This document exceeds 50,000 characters. Only the first portion was analyzed for performance. For complete analysis, consider splitting large documents.
+        </div>
         <div class="markdown-body" id="resultBody"></div>
       </div>
       <div class="spinner-wrap" id="analyzeSpinner" style="display:none">
@@ -155,6 +158,7 @@
       const cachedHtml = data.cached ? ' <span class="cached-badge">⚡ cached</span>' : '';
       document.getElementById('resultTitle').innerHTML = (typeLabels[atype] || atype) + cachedHtml;
       document.getElementById('resultBody').innerHTML = safeMarkdown(data.result);
+      document.getElementById('truncatedNotice').style.display = data.truncated ? 'block' : 'none';
       document.getElementById('resultContent').style.display = 'block';
       showToast('Analysis complete!', 'success');
     } catch (e) {
