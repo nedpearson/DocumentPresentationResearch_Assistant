@@ -8,6 +8,7 @@ uploads/
 outputs/
 instance/
 *.db
+*.log
 *.pptx
 *.pdf
 .DS_Store
